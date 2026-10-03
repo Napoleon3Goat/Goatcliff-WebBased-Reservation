@@ -1,0 +1,13 @@
+-- 06_bookings.sql (part 2 of 2): the double-booking lock
+
+create extension if not exists btree_gist with schema extensions;
+
+alter table public.bookings
+  add constraint no_double_booking_camping
+  exclude using gist (
+    activity_id with =,
+    daterange(visit_date, visit_date + nights) with &&
+  )
+  where (nights is not null
+         and payment_status in ('pending', 'down_payment', 'paid')
+         and attendance_status <> 'cancelled');
