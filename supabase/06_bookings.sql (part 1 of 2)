@@ -1,0 +1,48 @@
+-- 06_bookings.sql (part 1 of 2)
+create table public.bookings (
+  id                  uuid primary key default gen_random_uuid(),
+  reference_number    text not null unique
+                        default 'GC-' || upper(substr(md5(random()::text), 1, 8)),
+
+  -- What and when
+  activity_id         uuid not null references public.activities(id),
+  time_slot_id        uuid references public.activity_time_slots(id),  -- rock only
+  visit_date          date not null,                 -- camping: check-in; rock: activity date
+  nights              integer check (nights >= 1),   -- camping only
+
+  -- Guest details
+  guest_name          text not null,
+  companions_names    text[],
+  contact_number      text not null,
+  email               text not null,
+  group_size          integer not null check (group_size >= 1),
+  senior_count        integer not null default 0 check (senior_count >= 0),
+  pwd_count           integer not null default 0 check (pwd_count >= 0),
+  child_count         integer not null default 0 check (child_count >= 0),
+  local_count         integer not null default 0 check (local_count >= 0),  -- Atok locals
+
+  -- Money (frozen at booking time)
+  total_amount        numeric(10,2) not null check (total_amount >= 0),
+  amount_due          numeric(10,2) not null check (amount_due >= 0),
+  amount_paid         numeric(10,2) not null default 0 check (amount_paid >= 0),
+
+  -- Two separate statuses
+  payment_status      text not null default 'pending'
+                        check (payment_status in ('pending', 'down_payment', 'paid', 'expired', 'refunded')),
+  attendance_status   text not null default 'upcoming'
+                        check (attendance_status in ('upcoming', 'done', 'failed_to_show', 'cancelled')),
+  hold_expires_at     timestamptz,
+
+  -- Who and how
+  source                   text not null default 'online' check (source in ('online', 'walk_in')),
+  assigned_field_staff_id  uuid references public.admin_accounts(id),
+  guest_account_id         uuid references public.guest_accounts(id),
+  created_at               timestamptz not null default now(),
+
+  -- Rules that compare columns
+  check (senior_count <= group_size and pwd_count <= group_size
+         and child_count <= group_size and local_count <= group_size),
+  check (nights is null or time_slot_id is null)
+);
+
+alter table public.bookings enable row level security;
