@@ -1,0 +1,85 @@
+-- 11_availability.sql (part 3 of 3)
+
+-- The admin override flag (walk-ins only)
+alter table public.bookings
+  add column capacity_override boolean not null default false,
+  add constraint override_walk_in_only check (capacity_override = false or source = 'walk_in');
+
+-- The guard function
+create or replace function public.check_booking_availability()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_type          text;
+  v_default_cap   integer;
+  v_override_cap  integer;
+  v_cap           integer;
+  v_booked        integer;
+begin
+  -- 1. Skip: admin override, or booking doesn't take up space
+  if new.capacity_override
+     or new.attendance_status not in ('upcoming', 'done')
+     or new.payment_status not in ('pending', 'down_payment', 'paid') then
+    return new;
+  end if;
+
+  -- 2. Closed on any of the booked dates? (camping checks every night)
+  if exists (
+    select 1 from public.date_overrides o
+    where o.activity_id = new.activity_id
+      and o.is_closed
+      and o.override_date >= new.visit_date
+      and o.override_date <  new.visit_date + coalesce(new.nights, 1)
+  ) then
+    raise exception 'DATE_CLOSED: this activity is closed on one of the selected dates.';
+  end if;
+
+  -- 3. Look up the activity and LOCK it (one check at a time)
+  select type, daily_capacity into v_type, v_default_cap
+  from public.activities
+  where id = new.activity_id
+  for update;
+
+  if v_type <> 'rock_activity' then
+    return new;
+  end if;
+
+  -- 4. Today's cap: the override if there is one, otherwise the default
+  select daily_capacity into v_override_cap
+  from public.date_overrides
+  where activity_id = new.activity_id and override_date = new.visit_date;
+
+  v_cap := coalesce(v_override_cap, v_default_cap);
+  if v_cap is null then
+    return new;   -- no daily limit set
+  end if;
+
+  -- 5. Count everyone booked that day (finished groups still count toward the DAY)
+  select coalesce(sum(group_size), 0) into v_booked
+  from public.bookings
+  where activity_id = new.activity_id
+    and visit_date = new.visit_date
+    and id <> new.id
+    and attendance_status in ('upcoming', 'done')
+    and (payment_status in ('down_payment', 'paid')
+         or (payment_status = 'pending'
+             and (hold_expires_at is null or hold_expires_at > now())));
+
+  if v_booked + new.group_size > v_cap then
+    raise exception 'DAY_FULL: % has % of % spots taken; this group of % does not fit.',
+      new.visit_date, v_booked, v_cap, new.group_size;
+  end if;
+
+  return new;
+end;
+$$;
+
+-- When to run it
+create trigger enforce_availability
+  before insert or update of visit_date, nights, activity_id, group_size, capacity_override
+  on public.bookings
+  for each row
+  execute function public.check_booking_availability();
