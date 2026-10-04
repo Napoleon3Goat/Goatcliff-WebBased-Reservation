@@ -1,0 +1,8 @@
+-- 11_availability.sql (part 1 of 3)
+
+alter table public.activities
+  add column daily_capacity integer check (daily_capacity > 0);  -- max people per day; null = no daily limit
+
+update public.activities
+set daily_capacity = 150      -- placeholder until Goatcliff confirms
+where code = 'ROCK';
