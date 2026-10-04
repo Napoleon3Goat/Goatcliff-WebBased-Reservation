@@ -1,0 +1,18 @@
+-- 11_availability.sql (part 2 of 3)
+-- Admin exceptions: change a day's cap, or close the day entirely.
+
+create table public.date_overrides (
+  id              uuid primary key default gen_random_uuid(),
+  activity_id     uuid not null references public.activities(id),
+  override_date   date not null,
+  daily_capacity  integer check (daily_capacity >= 0),  -- replaces the default for this day
+  is_closed       boolean not null default false,       -- true = no bookings at all
+  reason          text not null,                        -- e.g. 'Typhoon', 'Short on staff'
+  set_by          uuid not null references public.admin_accounts(id),
+  created_at      timestamptz not null default now(),
+
+  unique (activity_id, override_date),
+  check (is_closed or daily_capacity is not null)
+);
+
+alter table public.date_overrides enable row level security;
