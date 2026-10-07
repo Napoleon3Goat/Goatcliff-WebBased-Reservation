@@ -4,7 +4,6 @@ create extension if not exists btree_gist with schema extensions;
 -- PostgreSQL database dump
 --
 
-\restrict srbsFvztoYYwkMvnob89wdSzNHsXyf2JycSFUYsqwbWjJFrlKo0LK3bDdW2yx5i
 
 -- Dumped from database version 17.11
 -- Dumped by pg_dump version 17.11
@@ -658,5 +657,5 @@ ALTER TABLE public.payments ENABLE ROW LEVEL SECURITY;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict srbsFvztoYYwkMvnob89wdSzNHsXyf2JycSFUYsqwbWjJFrlKo0LK3bDdW2yx5i
+
 
