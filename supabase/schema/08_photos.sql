@@ -1,6 +1,6 @@
 -- =====================================================================
 -- 08 PHOTOS (file storage)
--- Three "buckets" (folders) in Supabase Storage.
+-- Four "buckets" (folders) in Supabase Storage.
 --
 -- How it works:
 --   * activity-photos: PUBLIC. Anyone can open a photo by its link.
@@ -10,6 +10,7 @@
 --     Only Super Admin and Staff Admin can open and delete them (after checking).
 --   * payment-receipts: PRIVATE. Guests upload their GCash / Maya receipt;
 --     only Super Admin and Staff Admin can open them.
+--   * payment-qr: PUBLIC. Goat Cliff's GCash / Maya QR codes. Only the Super Admin uploads them.
 --   * All: images only (JPG, PNG, WebP), max 5 MB each.
 -- =====================================================================
 
@@ -65,3 +66,15 @@ create policy "Guests can upload payment receipts" on storage.objects
 create policy "Managers can view payment receipts" on storage.objects
   for select to authenticated
   using (bucket_id = 'payment-receipts' and public.current_admin_role() in ('super_admin', 'staff_admin'));
+
+
+-- ---------------------------------------------------------------------
+-- QR images: public bucket, Super Admin uploads
+-- (each upload gets a new file name, so nothing is overwritten)
+-- ---------------------------------------------------------------------
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('payment-qr', 'payment-qr', true, 5242880, array['image/jpeg', 'image/png', 'image/webp']);
+
+create policy "Super Admin can upload payment QR codes" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'payment-qr' and public.current_admin_role() = 'super_admin');

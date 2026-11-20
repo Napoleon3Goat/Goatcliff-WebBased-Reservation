@@ -133,3 +133,46 @@ $$;
 
 revoke execute on function public.submit_payment(text, text, text, text, text) from public;
 grant execute on function public.submit_payment(text, text, text, text, text) to anon, authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- Goat Cliff's GCash and Maya details (shown on the payment page).
+-- 2 rows only. Guests read the ones that are on; only the Super Admin changes them.
+-- ---------------------------------------------------------------------
+create table public.payment_wallets (
+  id              text primary key check (id in ('gcash', 'maya')),
+  name            text not null,                   -- shown to guests: GCash / Maya
+  account_name    text not null,                   -- the name on Goat Cliff's account
+  account_number  text not null,                   -- the mobile number guests send to
+  qr_path         text,                            -- the QR image in the payment-qr bucket (empty = none yet)
+  is_active       boolean not null default true,   -- off = guests can't pick it
+  updated_at      timestamptz not null default now(),
+  updated_by      uuid references public.admin_accounts (id)   -- Super Admin who last changed it
+);
+
+create index payment_wallets_updated_by_idx on public.payment_wallets (updated_by);
+
+-- Sample values for the demo. The Super Admin replaces them on the "Payment details" page.
+insert into public.payment_wallets (id, name, account_name, account_number) values
+  ('gcash', 'GCash', 'GOAT CLIFF ROCK ADVENTURES (sample)', '0900 000 0001'),
+  ('maya',  'Maya',  'GOAT CLIFF ROCK ADVENTURES (sample)', '0900 000 0002');
+
+
+-- ---------------------------------------------------------------------
+-- Access rules
+-- ---------------------------------------------------------------------
+alter table public.payment_wallets enable row level security;
+
+create policy "Guests can see payment details that are on" on public.payment_wallets
+  for select to anon, authenticated
+  using (is_active);
+
+create policy "Super Admin can see all payment details" on public.payment_wallets
+  for select to authenticated
+  using (public.current_admin_role() = 'super_admin');
+
+create policy "Super Admin can change payment details" on public.payment_wallets
+  for update to authenticated
+  using (public.current_admin_role() = 'super_admin')
+  with check (public.current_admin_role() = 'super_admin');
+-- (no insert or delete rules: there are always exactly these 2 rows)
