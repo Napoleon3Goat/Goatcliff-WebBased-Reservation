@@ -12,6 +12,8 @@
 - Never commit passwords, connection strings, or guest data.
 
 ## Folders
+- `schema/` = the whole database, one file per part, with comments. Start reading here.
+- `functions/` = Edge Functions (create-staff).
 - `archive/` = the original step-by-step build files (reference only, do NOT run).
 - `next-semester/` = chatbot tables, not yet run.
 
