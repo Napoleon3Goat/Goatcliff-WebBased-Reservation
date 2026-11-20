@@ -1,6 +1,6 @@
 -- =====================================================================
 -- 08 PHOTOS (file storage)
--- Two "buckets" (folders) in Supabase Storage.
+-- Three "buckets" (folders) in Supabase Storage.
 --
 -- How it works:
 --   * activity-photos: PUBLIC. Anyone can open a photo by its link.
@@ -8,7 +8,9 @@
 --   * id-photos: PRIVATE. Guests upload one ID per discounted person
 --     (named like GC-XXXXXXXX/senior-1.jpg), but can never open them.
 --     Only Super Admin and Staff Admin can open and delete them (after checking).
---   * Both: images only (JPG, PNG, WebP), max 5 MB each.
+--   * payment-receipts: PRIVATE. Guests upload their GCash / Maya receipt;
+--     only Super Admin and Staff Admin can open them.
+--   * All: images only (JPG, PNG, WebP), max 5 MB each.
 -- =====================================================================
 
 
@@ -47,3 +49,19 @@ create policy "Managers can view ID photos" on storage.objects
 create policy "Managers can delete ID photos" on storage.objects
   for delete to authenticated
   using (bucket_id = 'id-photos' and public.current_admin_role() in ('super_admin', 'staff_admin'));
+
+
+-- ---------------------------------------------------------------------
+-- Receipt screenshots: a private bucket, like the ID photos.
+-- Guests upload; only Super Admin and Staff Admin can open them.
+-- ---------------------------------------------------------------------
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('payment-receipts', 'payment-receipts', false, 5242880, array['image/jpeg', 'image/png', 'image/webp']);
+
+create policy "Guests can upload payment receipts" on storage.objects
+  for insert to anon, authenticated
+  with check (bucket_id = 'payment-receipts');
+
+create policy "Managers can view payment receipts" on storage.objects
+  for select to authenticated
+  using (bucket_id = 'payment-receipts' and public.current_admin_role() in ('super_admin', 'staff_admin'));

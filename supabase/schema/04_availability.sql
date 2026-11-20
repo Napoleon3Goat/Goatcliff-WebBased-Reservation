@@ -10,6 +10,8 @@
 -- The guest calendar asks two small functions: which dates are taken, which are closed.
 --
 -- A booking "holds its spot" while it is pending, down payment or paid, and not cancelled.
+-- An online booking that isn't paid yet holds its spot for 5 minutes only. Once the guest
+-- sends their payment proof, the timer stops and it waits for staff to check it.
 -- =====================================================================
 
 
@@ -206,6 +208,7 @@ begin
       and nights is not null                              -- camping bookings only
       and attendance_status <> 'cancelled'
       and payment_status in ('pending', 'down_payment', 'paid')
+      and (hold_expires_at is null or hold_expires_at > now())   -- NEW: skip holds whose time is up
       and night >= visit_date                             -- they arrived on or before this night
       and night <  visit_date + nights;                   -- and haven't left yet
 
@@ -231,6 +234,74 @@ create trigger check_tent_stock
 
 
 -- ---------------------------------------------------------------------
+-- Start the 5-minute timer on every online booking.
+-- I set it here, not on the website, so nobody can give themselves a longer hold.
+-- Staff-entered bookings (walk-in, Messenger, phone) get no timer.
+-- ---------------------------------------------------------------------
+create function public.start_payment_hold()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if new.source = 'online' then
+    new.hold_expires_at := now() + interval '5 minutes';
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.start_payment_hold() from public, anon, authenticated;
+
+create trigger start_payment_hold
+  before insert on public.bookings
+  for each row execute function public.start_payment_hold();
+
+
+-- ---------------------------------------------------------------------
+-- End the holds whose 5 minutes are up: they become "expired".
+-- (p_skip = a booking to leave alone, the one being saved right now.)
+-- ---------------------------------------------------------------------
+create function public.release_expired_holds(p_skip uuid default null)
+returns void
+language sql
+security definer
+set search_path = ''
+as $$
+  update public.bookings
+  set payment_status = 'expired'
+  where payment_status = 'pending'
+    and hold_expires_at < now()                      -- timer ran out (empty timer = never expires)
+    and (p_skip is null or id <> p_skip);            -- leave the skipped booking alone
+$$;
+
+revoke execute on function public.release_expired_holds(uuid) from public, anon;
+grant execute on function public.release_expired_holds(uuid) to authenticated;   -- the admin site's lists
+
+-- Before a booking is saved (or moved), clear out ended holds first,
+-- so an abandoned hold never blocks the camping double-booking rule.
+create function public.free_expired_holds()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  perform public.release_expired_holds(new.id);
+  return new;
+end;
+$$;
+
+revoke execute on function public.free_expired_holds() from public, anon, authenticated;
+
+create trigger free_expired_holds
+  before insert or update of visit_date, nights, activity_id
+  on public.bookings
+  for each row execute function public.free_expired_holds();
+
+
+-- ---------------------------------------------------------------------
 -- Guest calendar, part 1: which dates are taken?
 -- Gives back only the date, nights and number of people. Never names or contacts.
 -- ---------------------------------------------------------------------
@@ -248,6 +319,7 @@ as $$
     and b.visit_date + coalesce(b.nights, 1) > p_from     -- ends after the start of the range
     and b.payment_status in ('pending', 'down_payment', 'paid')
     and b.attendance_status <> 'cancelled'
+    and (b.hold_expires_at is null or b.hold_expires_at > now())   -- NEW: skip holds whose time is up
 $$;
 
 grant execute on function public.booked_dates(uuid, date, date) to anon, authenticated;

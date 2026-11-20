@@ -50,7 +50,9 @@ select t.try('rock 6 on a day limited to 5', t.book('ROCK', '2030-06-13', null, 
 select t.try('rock 5 on a day limited to 5', t.book('ROCK', '2030-06-13', null, 5));
 
 -- expired hold doesn't count, empty hold does
-select t.try('rock 70 pending, hold already ended', t.book('ROCK', '2030-06-14', null, 70, 'hold_expires_at=now() - interval ''1 hour'''));
+select t.try('rock 70 pending, hold already ended', t.book('ROCK', '2030-06-14', null, 70));
+-- the database sets the timer itself, so I end it by hand (like 5 minutes passing)
+update public.bookings set hold_expires_at = now() - interval '1 hour' where visit_date = '2030-06-14';
 select t.try('rock 70 more (old hold ended)', t.book('ROCK', '2030-06-14', null, 70));
 select t.try('rock 20 more (now 90)', t.book('ROCK', '2030-06-14', null, 20));
 

@@ -51,7 +51,7 @@ create table public.bookings (
                      check (payment_status in ('pending', 'down_payment', 'paid', 'expired', 'refunded')),
   attendance_status  text not null default 'upcoming'
                      check (attendance_status in ('upcoming', 'done', 'failed_to_show', 'cancelled')),
-  hold_expires_at    timestamptz,                                              -- 15-minute hold (Capstone 2)
+  hold_expires_at    timestamptz,                                              -- 5-minute payment hold (see 04)
 
   -- where the booking came from
   source             text not null default 'online'
@@ -82,6 +82,8 @@ create table public.bookings (
   -- tent rental (camping only): 5 tents good for 4, 3 tents good for 2
   tents_for_4   integer not null default 0 check (tents_for_4 between 0 and 5),
   tents_for_2   integer not null default 0 check (tents_for_2 between 0 and 3),
+
+  discount_amount numeric(10,2) not null default 0 check (discount_amount >= 0),  -- pesos off (monthly report)
 
 
   -- ----- rules that look at more than one column -----
