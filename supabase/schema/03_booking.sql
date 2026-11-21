@@ -156,18 +156,20 @@ create trigger set_created_by
 -- ---------------------------------------------------------------------
 -- "Check my booking": the guest types the reference number + email.
 -- Both must match. It shows only that one booking, with no contact details.
+-- (activity_code tells the reschedule calendar which activity to show.)
 -- ---------------------------------------------------------------------
 create function public.lookup_booking(p_reference text, p_email text)
 returns table (reference_number text, activity text, visit_date date, nights int, group_size int,
                total_amount numeric, amount_due numeric, amount_paid numeric,
-               payment_status text, attendance_status text)
+               payment_status text, attendance_status text, activity_code text)
 language sql
 stable
 security definer
 set search_path = ''
 as $$
   select b.reference_number, a.name, b.visit_date, b.nights, b.group_size,
-         b.total_amount, b.amount_due, b.amount_paid, b.payment_status, b.attendance_status
+         b.total_amount, b.amount_due, b.amount_paid, b.payment_status, b.attendance_status,
+         a.code
   from public.bookings b
   join public.activities a on a.id = b.activity_id
   where b.reference_number = upper(trim(p_reference))
