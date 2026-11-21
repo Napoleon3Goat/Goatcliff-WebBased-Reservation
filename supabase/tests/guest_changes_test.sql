@@ -53,14 +53,16 @@ select t.as_guest('visit is tomorrow: too late', format('select public.guest_res
 select t.as_guest('rock 5 onto a day with 79', format('select public.guest_reschedule(%L, %L, %L, %L)', 'GC-CHG00005', 'g@trial.test', '09171234567', t.day(12)));
 
 -- CANCEL
-select t.as_guest('cancel paid LA1 booking', format('select public.guest_cancel(%L, %L, %L, %L)', 'GC-CHG00002', 'g@trial.test', '09171234567', '  Family emergency  '));
+select t.as_guest('cancel paid booking, no refund account', format('select public.guest_cancel(%L, %L, %L, %L, %L, %L)', 'GC-CHG00002', 'g@trial.test', '09171234567', null, null, null));
+select t.as_guest('cancel paid booking, bad refund number', format('select public.guest_cancel(%L, %L, %L, %L, %L, %L)', 'GC-CHG00002', 'g@trial.test', '09171234567', null, 'gcash', '12345'));
+select t.as_guest('cancel paid LA1 booking', format('select public.guest_cancel(%L, %L, %L, %L, %L, %L)', 'GC-CHG00002', 'g@trial.test', '09171234567', '  Family emergency  ', 'gcash', '0918 765 4321'));
 insert into t.results (test, result)
 select '  booking now', attendance_status || ' / ' || payment_status from public.bookings where reference_number = 'GC-CHG00002';
 insert into t.results (test, result)
-select '  history row', action || ' / ' || refund_amount || ' ' || refund_status || ' / by ' || coalesce(processed_by::text, 'guest') || ' / ' || reason_details
+select '  history row', action || ' / ' || refund_amount || ' ' || refund_status || ' / by ' || coalesce(processed_by::text, 'guest') || ' / ' || reason_details || ' / to ' || refund_to_method || ' ' || refund_to_account
 from public.cancellations where booking_id = (select id from public.bookings where reference_number = 'GC-CHG00002');
-select t.as_guest('cancel it again', format('select public.guest_cancel(%L, %L, %L, %L)', 'GC-CHG00002', 'g@trial.test', '09171234567', null));
-select t.as_guest('cancel booking with unchecked proof (250)', format('select public.guest_cancel(%L, %L, %L, %L)', 'GC-CHG00006', 'g@trial.test', '09171234567', null));
+select t.as_guest('cancel it again', format('select public.guest_cancel(%L, %L, %L, %L, %L, %L)', 'GC-CHG00002', 'g@trial.test', '09171234567', null, 'gcash', '09187654321'));
+select t.as_guest('cancel booking with unchecked proof (250)', format('select public.guest_cancel(%L, %L, %L, %L, %L, %L)', 'GC-CHG00006', 'g@trial.test', '09171234567', null, 'maya', '09181112222'));
 insert into t.results (test, result)
 select '  refund for it', refund_amount::text from public.cancellations where booking_id = (select id from public.bookings where reference_number = 'GC-CHG00006');
 
@@ -68,7 +70,7 @@ select '  refund for it', refund_amount::text from public.cancellations where bo
 insert into public.bookings (reference_number, activity_id, visit_date, nights, guest_name, contact_number, email,
   group_size, age_18_24, male_count, total_amount, amount_due, consent_given_at, source)
 values ('GC-CHG00007', (select id from public.activities where code = 'CA2'), t.day(9), 1, 'Guest', '09171234567', 'g@trial.test', 2, 2, 2, 1000, 500, now(), 'online');
-select t.as_guest('cancel while still paying', format('select public.guest_cancel(%L, %L, %L, %L)', 'GC-CHG00007', 'g@trial.test', '09171234567', null));
+select t.as_guest('cancel while still paying', format('select public.guest_cancel(%L, %L, %L, %L, %L, %L)', 'GC-CHG00007', 'g@trial.test', '09171234567', null, null, null));
 
 -- OTHER RULES
 select t.as_guest('guest calls the helper directly', format('select public.find_guest_booking(%L, %L, %L)', 'GC-CHG00001', 'g@trial.test', '09171234567'));

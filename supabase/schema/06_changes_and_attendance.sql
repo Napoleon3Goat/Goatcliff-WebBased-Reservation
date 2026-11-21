@@ -6,7 +6,7 @@
 --   * Every reschedule, refund or cancellation is written down as its own row,
 --     with the reason and the staff member who did it. The booking itself is kept.
 --   * A new date must be on or before Dec 31 of the original visit's year.
---   * A refund marked "processed" must say how it was sent (GCash, cash, bank).
+--   * A refund marked "processed" must say how it was sent (GCash, Maya, cash, bank).
 --   * Guests can reschedule or cancel online themselves (guest_reschedule / guest_cancel, below),
 --     at least 2 days before the visit, with their reference + email + mobile number.
 --     Staff don't have the 2-day rule.
@@ -29,7 +29,9 @@ create table public.cancellations (
   processed_by         uuid references public.admin_accounts (id),   -- staff who did it (empty = the guest, online)
   guest_notified_at    timestamptz,                                   -- when the guest was told
   created_at           timestamptz not null default now(),
-  refund_method        text check (refund_method in ('gcash', 'cash', 'bank')),
+  refund_method        text check (refund_method in ('gcash', 'maya', 'cash', 'bank')),   -- how staff sent the refund
+  refund_to_method     text check (refund_to_method in ('gcash', 'maya')),   -- where the guest wants the refund (online)
+  refund_to_account    text check (refund_to_account ~ '^09[0-9]{9}$'),     -- their GCash / Maya number
 
   -- a reschedule needs a new date ...
   check (action <> 'reschedule' or new_visit_date is not null),
@@ -200,23 +202,26 @@ grant execute on function public.guest_reschedule(text, text, text, date) to ano
 
 -- ---------------------------------------------------------------------
 -- The guest cancels their booking. Gives back the refund amount (0 = nothing to refund).
+-- If there's money to refund, they must say where to send it (GCash or Maya + number).
 -- ---------------------------------------------------------------------
-create function public.guest_cancel(p_reference text, p_email text, p_mobile text, p_reason text)
+create function public.guest_cancel(p_reference text, p_email text, p_mobile text, p_reason text,
+                                    p_refund_method text, p_refund_account text)
 returns numeric
 language plpgsql
 security definer
 set search_path = ''
 as $$
 declare
-  this_booking uuid;
-  visit_day   date;
-  pay_status  text;            -- payment status
-  visit       text;            -- attendance status
-  timer_ends  timestamptz;
-  paid        numeric(10,2);   -- what the guest paid (confirmed)
-  waiting     numeric(10,2);   -- what they sent that staff haven't checked yet
-  reason      text;
-  today       date := (now() at time zone 'Asia/Manila')::date;
+  this_booking   uuid;
+  visit_day      date;
+  pay_status     text;            -- payment status
+  visit          text;            -- attendance status
+  timer_ends     timestamptz;
+  paid           numeric(10,2);   -- what the guest paid (confirmed)
+  waiting        numeric(10,2);   -- what they sent that staff haven't checked yet
+  reason         text;
+  refund_number  text;            -- their GCash / Maya number, digits only
+  today          date := (now() at time zone 'Asia/Manila')::date;
 begin
   -- Step 1. Find the booking (reference + email + mobile) and lock it.
   this_booking := public.find_guest_booking(p_reference, p_email, p_mobile);
@@ -254,12 +259,25 @@ begin
 
   -- Step 4. Cancel the booking (the spot opens for other guests).
   if paid > 0 then
+    -- 4a. There's a refund, so I need to know where to send it.
+    refund_number := regexp_replace(coalesce(p_refund_account, ''), '[^0-9]', '', 'g');
+
+    if p_refund_method is null or p_refund_method not in ('gcash', 'maya') then
+      raise exception 'NO_REFUND_ACCOUNT: choose GCash or Maya for your refund.';
+    end if;
+
+    if refund_number !~ '^09[0-9]{9}$' then
+      raise exception 'BAD_REFUND_ACCOUNT: enter your 11-digit GCash / Maya number (09...).';
+    end if;
+
     update public.bookings set attendance_status = 'cancelled', payment_status = 'refunded' where id = this_booking;
 
-    -- the refund waits in staff's "To do" until they send it
+    -- 4b. The refund waits in staff's "To do" until they send it
     insert into public.cancellations (booking_id, action, reason_category, reason_details,
-                                      original_visit_date, refund_amount, refund_status, processed_by)
-    values (this_booking, 'refund', 'guest_request', reason, visit_day, paid, 'pending', null);
+                                      original_visit_date, refund_amount, refund_status, processed_by,
+                                      refund_to_method, refund_to_account)
+    values (this_booking, 'refund', 'guest_request', reason, visit_day, paid, 'pending', null,
+            p_refund_method, refund_number);
   else
     update public.bookings set attendance_status = 'cancelled' where id = this_booking;
 
@@ -273,5 +291,5 @@ begin
 end;
 $$;
 
-revoke execute on function public.guest_cancel(text, text, text, text) from public;
-grant execute on function public.guest_cancel(text, text, text, text) to anon, authenticated;
+revoke execute on function public.guest_cancel(text, text, text, text, text, text) from public;
+grant execute on function public.guest_cancel(text, text, text, text, text, text) to anon, authenticated;
